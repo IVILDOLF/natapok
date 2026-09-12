@@ -90,7 +90,7 @@
 
   ;; ---- QWERTY <-> APT v3 angle --------------------------------------
   lyt  (tap-dance $dd ([ (on-press tap-virtualkey vlyt)))
-  lytA (tap-dance $dd (y (on-press tap-virtualkey vlytoff)))
+  lytA (tap-dance $dd ([ (on-press tap-virtualkey vlytoff)))
 
   ;; ---- nav additions (middle legends) --------------------------------
   cpy  C-c
@@ -139,7 +139,7 @@
 ;;       y and b are unused in this layout, so they are dead keys.
 ;; ------------------------------------------------------------
 (deflayer apt
-  @sft  w     g     d     f     b     XX    q     l     u     o     [     @lytA  \
+  @sft  w     g     d     f     b     XX    q     l     u     o     y     @lytA  \
   bspc  r     s     t     h     k     j     n     e     a     i     @apo  ret
   @ctl  c     m     p     v     XX    x     z     @cma  @dot  '     esc
   @ctl  lmet  lalt              spc               caps  rmet  cmp   @ctl

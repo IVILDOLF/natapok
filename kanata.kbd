@@ -1,0 +1,179 @@
+;; ============================================================
+;;  kanata config - generated from ansi-104-internal.json (KLE)
+;;
+;;  LAYERS  (file order matters: later layer = higher priority
+;;           when several are active at once)
+;;    0 base : QWERTY                 <- starting layer
+;;    1 apt  : APT v3 angle           <- double-tap [  (English only)
+;;    2 nav  : double-tap Ctrl        ; tap '    to leave
+;;    3 sym  : double-tap '           ; tap Ctrl to leave
+;;    4 fn   : hold Fn (Z) while in nav
+;;
+;;  nav / sym are now OVERLAYS (layer-while-held driven by virtual
+;;  keys) instead of layer-switch. That is what makes a transparent
+;;  `_` fall through to whichever base layout is live - base or apt.
+;;
+;;  Only the 4 rows below are touched. Function row, number row,
+;;  arrows, navigation cluster and numpad keep their stock behaviour.
+;; ============================================================
+
+(defcfg
+  process-unmapped-keys no
+  ;; Linux only - uncomment and point at your device if autodetect misbehaves:
+  ;; linux-dev /dev/input/by-id/your-keyboard-event-kbd
+)
+
+(defsrc
+  tab   q     w     e     r     t     y     u     i     o     p     [     ]     \
+  caps  a     s     d     f     g     h     j     k     l     ;     '     ret
+  lsft  z     x     c     v     b     n     m     ,     .     /     rsft
+  lctl  lmet  lalt              spc               ralt  rmet  cmp   rctl
+)
+
+(defvar
+  ;; one place to tune every double-tap window
+  dd 200
+)
+
+;; ------------------------------------------------------------
+;; State flags + layer overlays
+;;
+;;  aptp : ON = "I want APT v3 angle"   (remembered across language
+;;              switches, so QWERTY<->APT survives EN<->RU)
+;;  RU   : ON = "Russian input is active"
+;;
+;;  Actual base layer = apt  only when  aptp is ON and RU is OFF.
+;; ------------------------------------------------------------
+(defvirtualkeys
+  aptp nop0
+  RU   nop1
+  vnav (layer-while-held nav)
+  vsym (layer-while-held sym)
+
+  ;; double-tap [ on QWERTY
+  vlyt (switch
+         ((input virtual RU))   (macro [ [)                                                    break
+         ((input virtual aptp)) (multi (on-press release-virtualkey aptp) (layer-switch base))  break
+         ()                     (multi (on-press press-virtualkey   aptp) (layer-switch apt))   break)
+
+  ;; double-tap [ while already on APT -> back to QWERTY
+  vlytoff (multi (on-press release-virtualkey aptp) (layer-switch base))
+
+  ;; fired whenever the OS language is toggled (see @sft below)
+  vlang (switch
+          ((and (input virtual RU) (input virtual aptp)))
+            (multi (on-press release-virtualkey RU) (layer-switch apt))  break
+          ((input virtual RU))
+            (multi (on-press release-virtualkey RU) (layer-switch base)) break
+          ()
+            (multi (on-press press-virtualkey   RU) (layer-switch base)) break)
+)
+
+(defalias
+  ;; ---- entering / leaving the overlay layers -------------------------
+  bse  (multi (on-press release-virtualkey vnav) (on-press release-virtualkey vsym))
+  gnav (multi (on-press release-virtualkey vsym) (on-press press-virtualkey   vnav))
+  gsym (multi (on-press release-virtualkey vnav) (on-press press-virtualkey   vsym))
+  fnl  (layer-while-held fn)
+
+  ;; Ctrl: normal Ctrl immediately, double-tap -> nav
+  ctl  (tap-dance-eager $dd (lctl @gnav))
+  ;; ' : tap = apostrophe, double-tap -> sym (non-eager, no stray ')
+  apo  (tap-dance $dd (' @gsym))
+
+  ;; ---- double-taps from the KLE bottom-centre legends ----------------
+  cma  (tap-dance $dd (, tab))       ;; , ,  -> Tab
+  dot  (tap-dance $dd (. lalt))      ;; . .  -> Alt
+  ;; If you'd rather have a sticky Alt that applies to the NEXT key,
+  ;; swap the line above for:
+  ;; dot  (tap-dance $dd (. (one-shot 1000 lalt)))
+
+  ;; ---- QWERTY <-> APT v3 angle --------------------------------------
+  lyt  (tap-dance $dd ([ (on-press tap-virtualkey vlyt)))
+  lytA (tap-dance $dd (y (on-press tap-virtualkey vlytoff)))
+
+  ;; ---- nav additions (middle legends) --------------------------------
+  cpy  C-c
+  pst  C-v
+
+  ;; ---- language-switch hook ------------------------------------------
+  ;; kanata cannot see the OS input language, so it has to be told.
+  ;; Physical Tab outputs Shift here, so Alt + physical-Tab IS Alt+Shift.
+  ;; Passing it through to the OS *and* flipping kanata's `RU` flag keeps
+  ;; the two in sync.
+  lang (on-press tap-virtualkey vlang)
+  sft  (switch
+         ((input real lalt)) (multi lsft @lang) break
+         ()                  lsft               break)
+
+  ;; --- alternatives: use ONE of these instead of the @sft above -------
+  ;; Ctrl+Shift  (physical LShift and LCtrl both emit Ctrl here):
+  ;; sft  (switch
+  ;;        ((or (input real lctl) (input real lsft))) (multi lsft @lang) break
+  ;;        ()                                         lsft               break)
+  ;;
+  ;; Win+Space - put @spc on the spc position in base and apt:
+  ;; spc  (switch
+  ;;        ((input real lmet)) (multi spc @lang) break
+  ;;        ()                  spc               break)
+  ;;
+  ;; Dedicated key (most reliable - kanata can never drift out of sync).
+  ;; Sends the OS hotkey itself and flips the flag. Put @lng somewhere,
+  ;; e.g. on the Menu (cmp) key, and use only that key to switch language:
+  ;; lng  (multi (macro A-lsft) @lang)
+)
+
+;; ------------------------------------------------------------
+;; base - QWERTY. tab=Shift, caps=Backspace, lshift=Ctrl, ralt=CapsLock
+;; ------------------------------------------------------------
+(deflayer base
+  @sft  q     w     e     r     t     y     u     i     o     p     [     @lyt  \
+  bspc  a     s     d     f     g     h     j     k     l     ;     @apo  ret
+  @ctl  z     x     c     v     b     n     m     @cma  @dot  /     esc
+  @ctl  lmet  lalt              spc               caps  rmet  cmp   @ctl
+)
+
+;; ------------------------------------------------------------
+;; apt - APT v3 angle, taken from the first (top-left) legend of
+;;       every key in the KLE file. Only reachable while `RU` is OFF.
+;;       y and b are unused in this layout, so they are dead keys.
+;; ------------------------------------------------------------
+(deflayer apt
+  @sft  w     g     d     f     b     XX    q     l     u     o     [     @lytA  \
+  bspc  r     s     t     h     k     j     n     e     a     i     @apo  ret
+  @ctl  c     m     p     v     XX    x     z     @cma  @dot  '     esc
+  @ctl  lmet  lalt              spc               caps  rmet  cmp   @ctl
+)
+
+;; ------------------------------------------------------------
+;; nav - arrows on ASDF, page keys on QWER, numpad on the right hand,
+;;       Meta/Copy/Paste on XCV, Fn on Z.  ' exits.
+;; ------------------------------------------------------------
+(deflayer nav
+  _     home  pgup  pgdn  end   _     _     1     2     3     _     _     _     _
+  _     left  up    down  rght  _     _     4     5     6     _     @bse  _
+  _     @fnl  lmet  @cpy  @pst  _     0     7     8     9     _     _
+  _     _     _                 _                 _     _     _     _
+)
+
+;; ------------------------------------------------------------
+;; sym - symbols; Ctrl exits back to whichever base layout is live
+;; ------------------------------------------------------------
+(deflayer sym
+  _     S-=   -     /     S-8   _     _     S-3   S-4   S-7   S-2   _     _     _
+  _     S--   .     ,     '     =     S-grv S-9   S-[   [     S-\   \     _
+  @bse  grv   S-;   ;     S-'   _     _     S-,   S-1   S-/   S-.   _
+  @bse  _     _                 _                 _     _     _     @bse
+)
+
+;; ------------------------------------------------------------
+;; fn - held from Z in the nav layer.
+;;      F1-F9 stay on the numpad cluster, F10 on the 0 key,
+;;      F11 on h and F12 on y.
+;; ------------------------------------------------------------
+(deflayer fn
+  _     _     _     _     _     _     f12   f1    f2    f3    _     _     _     _
+  _     _     _     _     _     _     f11   f4    f5    f6    _     _     _
+  _     _     _     _     _     _     f10   f7    f8    f9    _     _
+  _     _     _                 _                 _     _     _     _
+)

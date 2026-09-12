@@ -78,6 +78,10 @@
 
   ;; Ctrl: normal Ctrl immediately, double-tap -> nav
   ctl  (tap-dance-eager $dd (lctl @gnav))
+
+  ;; Ctrl inside sym: tap = leave sym, hold = real Ctrl for the next key,
+  ;;                  release = leave sym either way.
+  sctl (tap-hold-press $dd $dd @bse (multi lctl (on-release release-virtualkey vsym)))
   ;; ' : tap = apostrophe, double-tap -> sym (non-eager, no stray ')
   apo  (tap-dance $dd (' @gsym))
 
@@ -157,13 +161,14 @@
 )
 
 ;; ------------------------------------------------------------
-;; sym - symbols; Ctrl exits back to whichever base layout is live
+;; sym - symbols; Ctrl = modifier while held, and exits back to whichever
+;;       base layout is live as soon as it is released
 ;; ------------------------------------------------------------
 (deflayer sym
   _     S-=   -     /     S-8   _     _     S-3   S-4   S-7   S-2   _     _     _
   _     S--   .     ,     '     =     S-grv S-9   S-[   [     S-\   \     _
-  @bse  grv   S-;   ;     S-'   _     _     S-,   S-1   S-/   S-.   _
-  @bse  _     _                 _                 _     _     _     @bse
+  @sctl grv   S-;   ;     S-'   _     _     S-,   S-1   S-/   S-.   _
+  @sctl _     _                 _                 _     _     _     @sctl
 )
 
 ;; ------------------------------------------------------------

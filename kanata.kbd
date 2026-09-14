@@ -5,13 +5,26 @@
 ;;           when several are active at once)
 ;;    0 base : QWERTY                 <- starting layer
 ;;    1 apt  : APT v3 angle           <- double-tap [  (English only)
-;;    2 nav  : double-tap Ctrl        ; tap '    to leave
-;;    3 sym  : double-tap '           ; tap Ctrl to leave
+;;    2 nav  : double-tap Ctrl        ; double-tap Ctrl again to leave
+;;    3 sym  : double-tap '           ; double-tap '    again to leave
 ;;    4 fn   : hold Fn (Z) while in nav
 ;;
-;;  nav / sym are now OVERLAYS (layer-while-held driven by virtual
-;;  keys) instead of layer-switch. That is what makes a transparent
-;;  `_` fall through to whichever base layout is live - base or apt.
+;;  Enter and exit use the same key now, so the two overlays are
+;;  symmetric:
+;;    Ctrl Ctrl -> nav ... Ctrl Ctrl -> back
+;;    '    '    -> sym ... '    '    -> back
+;;  Crossing over also works: double-tap ' inside nav jumps straight to
+;;  sym, double-tap Ctrl inside sym jumps straight to nav.
+;;
+;;  SHIFT (physical Tab) is ONE-SHOT on every layer:
+;;    tap        -> next key press is shifted, then Shift is dropped
+;;    tap again  -> cancels a pending one-shot (nothing gets shifted)
+;;    hold       -> plain Shift, exactly as before (drag-select, etc.)
+;;    Alt + Tab  -> still the OS language toggle (see @sft / @lang)
+;;
+;;  nav / sym are OVERLAYS (layer-while-held driven by virtual keys)
+;;  instead of layer-switch. That is what makes a transparent `_` fall
+;;  through to whichever base layout is live - base or apt.
 ;;
 ;;  Only the 4 rows below are touched. Function row, number row,
 ;;  arrows, navigation cluster and numpad keep their stock behaviour.
@@ -19,6 +32,15 @@
 
 (defcfg
   process-unmapped-keys no
+  ;; NOTE on the one-shot Shift: keys that are NOT in defsrc (the number
+  ;; row, arrows, numpad...) are invisible to kanata while this is `no`,
+  ;; so they cannot end a pending one-shot. Shift+3 still types "#", but
+  ;; the Shift keeps hanging until the $os timeout expires or until you
+  ;; press a key that IS in defsrc. If that bothers you, switch to:
+  ;;   process-unmapped-keys yes
+  ;; (on Windows also look at the `windows-altgr` option first if you
+  ;;  type Polish characters with right Alt).
+
   ;; Linux only - uncomment and point at your device if autodetect misbehaves:
   ;; linux-dev /dev/input/by-id/your-keyboard-event-kbd
 )
@@ -33,6 +55,8 @@
 (defvar
   ;; one place to tune every double-tap window
   dd 200
+  ;; how long a one-shot Shift waits for the key it should modify
+  os 1500
 )
 
 ;; ------------------------------------------------------------
@@ -78,12 +102,20 @@
 
   ;; Ctrl: normal Ctrl immediately, double-tap -> nav
   ctl  (tap-dance-eager $dd (lctl @gnav))
+  ;; Ctrl inside nav: normal Ctrl immediately, double-tap -> leave nav
+  nctl (tap-dance-eager $dd (lctl @bse))
 
-  ;; Ctrl inside sym: tap = leave sym, hold = real Ctrl for the next key,
-  ;;                  release = leave sym either way.
-  sctl (tap-hold-press $dd $dd @bse (multi lctl (on-release release-virtualkey vsym)))
   ;; ' : tap = apostrophe, double-tap -> sym (non-eager, no stray ')
   apo  (tap-dance $dd (' @gsym))
+  ;; ' inside sym: tap = \ (the symbol that lives on that key in sym),
+  ;;               double-tap -> leave sym
+  sapo (tap-dance $dd (\ @bse))
+
+  ;; ---- one-shot Shift -------------------------------------------------
+  ;; -press   : consumed by the press of the next key
+  ;; -pcancel : pressing Shift again while it is pending cancels it
+  ;; holding the key still gives a plain, normal Shift.
+  osft (one-shot-press-pcancel $os lsft)
 
   ;; ---- double-taps from the KLE bottom-centre legends ----------------
   cma  (tap-dance $dd (, tab))       ;; , ,  -> Tab
@@ -104,17 +136,21 @@
   ;; kanata cannot see the OS input language, so it has to be told.
   ;; Physical Tab outputs Shift here, so Alt + physical-Tab IS Alt+Shift.
   ;; Passing it through to the OS *and* flipping kanata's `RU` flag keeps
-  ;; the two in sync.
+  ;; the two in sync.  The Alt branch sends a real (non one-shot) Shift,
+  ;; otherwise the hotkey would be eaten by the one-shot machinery.
   lang (on-press tap-virtualkey vlang)
   sft  (switch
          ((input real lalt)) (multi lsft @lang) break
-         ()                  lsft               break)
+         ()                  @osft              break)
 
   ;; --- alternatives: use ONE of these instead of the @sft above -------
+  ;; Plain one-shot Shift, no language hook at all:
+  ;; sft  @osft
+  ;;
   ;; Ctrl+Shift  (physical LShift and LCtrl both emit Ctrl here):
   ;; sft  (switch
   ;;        ((or (input real lctl) (input real lsft))) (multi lsft @lang) break
-  ;;        ()                                         lsft               break)
+  ;;        ()                                         @osft              break)
   ;;
   ;; Win+Space - put @spc on the spc position in base and apt:
   ;; spc  (switch
@@ -128,7 +164,8 @@
 )
 
 ;; ------------------------------------------------------------
-;; base - QWERTY. tab=Shift, caps=Backspace, lshift=Ctrl, ralt=CapsLock
+;; base - QWERTY. tab=one-shot Shift, caps=Backspace, lshift=Ctrl,
+;;        ralt=CapsLock
 ;; ------------------------------------------------------------
 (deflayer base
   @sft  q     w     e     r     t     y     u     i     o     p     [     @lyt  \
@@ -151,24 +188,29 @@
 
 ;; ------------------------------------------------------------
 ;; nav - arrows on ASDF, page keys on QWER, numpad on the right hand,
-;;       Meta/Copy/Paste on XCV, Fn on Z.  ' exits.
+;;       Meta/Copy/Paste on XCV, Fn on Z.
+;;       Double-tap Ctrl exits.  ' is transparent again: tap it for a
+;;       real apostrophe, double-tap it to hop over to sym.
 ;; ------------------------------------------------------------
 (deflayer nav
   _     pgup  home  up    end   _     _     1     2     3     _     _     _     _
-  _     pgdn  left  down  rght  _     _     4     5     6     _     @bse  _
-  _     @fnl  lmet  @cpy  @pst  _     0     7     8     9     _     _
-  _     _     _                 _                 _     _     _     _
+  _     pgdn  left  down  rght  _     _     4     5     6     _     _     _
+  @nctl @fnl  lmet  @cpy  @pst  _     0     7     8     9     _     _
+  @nctl _     _                 _                 _     _     _     @nctl
 )
 
 ;; ------------------------------------------------------------
-;; sym - symbols; Ctrl = modifier while held, and exits back to whichever
-;;       base layout is live as soon as it is released
+;; sym - symbols.  Double-tap ' (the \ key here) exits.
+;;       Ctrl is transparent, so it is a plain Ctrl while held - and a
+;;       double-tap on it hops over to nav, just like from the base
+;;       layer.  Use `lctl` instead of `_` on those four spots if you
+;;       never want to leave sym that way.
 ;; ------------------------------------------------------------
 (deflayer sym
   _     S-=   -     /     S-8   _     _     S-3   S-4   S-7   S-2   _     _     _
-  _     S--   .     ,     '     =     S-grv S-9   S-[   [     S-\   \     _
-  @sctl grv   S-;   ;     S-'   _     _     S-,   S-1   S-/   S-.   _
-  @sctl _     _                 _                 _     _     _     @sctl
+  _     S--   .     ,     '     =     S-grv S-9   S-[   [     S-\   @sapo _
+  _     grv   S-;   ;     S-'   _     _     S-,   S-1   S-/   S-.   _
+  _     _     _                 _                 _     _     _     _
 )
 
 ;; ------------------------------------------------------------
